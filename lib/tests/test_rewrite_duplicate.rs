@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use itertools::Itertools as _;
 use jj_lib::backend::CommitId;
 use jj_lib::repo::Repo as _;
@@ -76,6 +78,7 @@ fn test_duplicate_linear_contents() {
         duplicate_commits(
             tx.repo_mut(),
             &target_commits.iter().copied().cloned().collect_vec(),
+            &HashMap::new(),
             &parent_commit_ids.iter().copied().cloned().collect_vec(),
             &children_commit_ids.iter().copied().cloned().collect_vec(),
         )
@@ -175,5 +178,50 @@ fn test_duplicate_linear_contents() {
     assert_eq!(
         tx.repo().store().get_commit(head_id).unwrap().tree_id(),
         &tree_1_2.id()
+    );
+}
+
+#[test]
+fn test_duplicate_with_custom_descriptions() {
+    let test_repo = TestRepo::init();
+    let repo = &test_repo.repo;
+
+    let root_commit_id = repo.store().root_commit_id();
+    let empty_tree_id = repo.store().empty_merged_tree_id();
+
+    let mut tx = repo.start_transaction();
+    let commit_a = tx
+        .repo_mut()
+        .new_commit(vec![root_commit_id.clone()], empty_tree_id.clone())
+        .set_description("original a")
+        .write()
+        .unwrap();
+    let commit_b = tx
+        .repo_mut()
+        .new_commit(vec![root_commit_id.clone()], empty_tree_id.clone())
+        .set_description("original b")
+        .write()
+        .unwrap();
+    let repo = tx.commit("test").unwrap();
+
+    let mut tx = repo.start_transaction();
+
+    let stats = duplicate_commits(
+        tx.repo_mut(),
+        &[commit_a.id().clone(), commit_b.id().clone()],
+        &HashMap::from([(commit_a.id().clone(), "custom".to_string())]),
+        &[root_commit_id.clone()],
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+        stats.duplicated_commits[commit_a.id()].description(),
+        "custom"
+    );
+
+    assert_eq!(
+        stats.duplicated_commits[commit_b.id()].description(),
+        "original b"
     );
 }
