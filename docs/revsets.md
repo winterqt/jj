@@ -321,15 +321,41 @@ revsets (expressions) as arguments.
   Some file patterns might need quoting because the `expression` must also be
   parsable as a revset. For example, `.` has to be quoted in `files(".")`.
 
-* `diff_contains(text[, files])`: Commits containing diffs matching the given
+* `diff_contains(text[, files][, strict=false])`: Commits containing diffs matching the given
   `text` pattern line by line.
 
   The search paths can be narrowed by the `files` expression. All modified files
   are scanned by default, but it is likely to change in future version to
   respect the command line path arguments.
 
-  For example, `diff_contains("TODO", "src")` will search revisions where "TODO"
-  is added to or removed from files under "src".
+  For example, `diff_contains("TODO", "src")` will search revisions where lines
+  containing "TODO" are added, modified, or removed.
+
+  The search can further be narroweed by the `strict` option, which emulates
+  `git log -S`: diffs will only be included if the number of matches changes
+  from its parent.
+
+  For example, `diff_contains("TODO", "src", strict=true)` will search revisions
+  where "TODO" is added to or removed from files under "src", ignoring lines where
+  unrelated changes were made.
+
+  To illustrate the difference, consider this diff:
+  ```diff
+  diff --git a/src/main.rs b/src/main.rs
+  index 93f928d487..2c0a259e24 100644
+  --- a/src/main.rs
+  +++ b/src/main.rs
+  @@ -1,4 +1,4 @@
+   fn main() {
+  -    // TODO: Make this more flashy
+  +    // TODO: Make this cooler
+       println!("I love jj!");
+   }
+  ```
+
+  This commit would *not* be matched in strict mode, as it does not change the number
+  of TODOs in the file. It would, however, be matched if strict mode was not enabled,
+  as a line that contains a TODO was modified.
 
 * `conflicts()`: Commits with conflicts.
 

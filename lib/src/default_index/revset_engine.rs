@@ -36,6 +36,7 @@ use super::rev_walk::PeekableRevWalk;
 use super::rev_walk::RevWalk;
 use super::rev_walk::RevWalkBuilder;
 use super::revset_graph_iterator::RevsetGraphWalk;
+use crate::backend::BackendError;
 use crate::backend::BackendResult;
 use crate::backend::ChangeId;
 use crate::backend::CommitId;
@@ -1228,9 +1229,14 @@ fn build_predicate_fn(
                 Ok(has_diff_from_parent(&store, index, &commit, &*matcher)?)
             })
         }
-        RevsetFilterPredicate::DiffContains { text, files } => {
+        RevsetFilterPredicate::DiffContains {
+            text,
+            files,
+            strict,
+        } => {
             let text_pattern = text.clone();
             let files_matcher: Rc<dyn Matcher> = files.to_matcher().into();
+            let strict = *strict;
             box_pure_predicate_fn(move |index, pos| {
                 let entry = index.entry_by_pos(pos);
                 let commit = store.get_commit(&entry.commit_id())?;
@@ -1240,6 +1246,7 @@ fn build_predicate_fn(
                     &commit,
                     &text_pattern,
                     &*files_matcher,
+                    strict,
                 )?)
             })
         }
@@ -1307,6 +1314,7 @@ fn matches_diff_from_parent(
     commit: &Commit,
     text_pattern: &StringPattern,
     files_matcher: &dyn Matcher,
+    strict: bool,
 ) -> BackendResult<bool> {
     let parents: Vec<_> = commit.parents().try_collect()?;
     // Conflict resolution is expensive, try that only for matched files.
@@ -1333,7 +1341,42 @@ fn matches_diff_from_parent(
             // hunks due to lack of contexts, but is way faster than full diff.
             let left_lines = match_lines(&left_content, text_pattern);
             let right_lines = match_lines(&right_content, text_pattern);
-            if left_lines.ne(right_lines) {
+            if strict {
+                let count_matches: Box<dyn Fn(&str) -> usize> = match text_pattern {
+                    StringPattern::Exact(s) => Box::new(move |line| if line == s { 1 } else { 0 }),
+                    StringPattern::ExactI(s) => {
+                        let s = s.to_ascii_lowercase();
+                        Box::new(
+                            move |line| {
+                                if line.to_ascii_lowercase() == s {
+                                    1
+                                } else {
+                                    0
+                                }
+                            },
+                        )
+                    }
+                    StringPattern::Substring(s) => Box::new(move |line| line.matches(s).count()),
+                    StringPattern::SubstringI(s) => {
+                        let s = s.to_ascii_lowercase();
+                        Box::new(move |line| line.to_ascii_lowercase().matches(&s).count())
+                    }
+                    StringPattern::Regex(r) => Box::new(move |line| r.find_iter(line).count()),
+                    p => {
+                        return Err(BackendError::Other(
+                            format!("bad string pattern type {p} for strict mode").into(),
+                        ))
+                    }
+                };
+
+                let count = |lines: &Vec<&str>| -> usize {
+                    lines.iter().map(|&line| count_matches(line)).sum()
+                };
+
+                if count(&left_lines) != count(&right_lines) {
+                    return Ok(true);
+                }
+            } else if left_lines != right_lines {
                 return Ok(true);
             }
         }
@@ -1342,17 +1385,18 @@ fn matches_diff_from_parent(
     .block_on()
 }
 
-fn match_lines<'a, 'b>(
-    text: &'a [u8],
-    pattern: &'b StringPattern,
-) -> impl Iterator<Item = &'a [u8]> + use<'a, 'b> {
+fn match_lines<'a>(text: &'a [u8], pattern: &StringPattern) -> Vec<&'a str> {
     // The pattern is matched line by line so that it can be anchored to line
     // start/end. For example, exact:"" will match blank lines.
-    text.split_inclusive(|b| *b == b'\n').filter(|line| {
-        let line = line.strip_suffix(b"\n").unwrap_or(line);
-        // TODO: add .matches_bytes() or .to_bytes_matcher()
-        str::from_utf8(line).is_ok_and(|line| pattern.matches(line))
-    })
+    text.split_inclusive(|b| *b == b'\n')
+        .filter_map(|line| {
+            let line = line.strip_suffix(b"\n").unwrap_or(line);
+            // TODO: add .matches_bytes() or .to_bytes_matcher()
+            str::from_utf8(line)
+                .ok()
+                .filter(|line| pattern.matches(line))
+        })
+        .collect()
 }
 
 fn to_file_content(path: &RepoPath, value: MaterializedTreeValue) -> BackendResult<Vec<u8>> {

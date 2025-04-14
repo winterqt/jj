@@ -180,6 +180,7 @@ pub enum RevsetFilterPredicate {
     DiffContains {
         text: StringPattern,
         files: FilesetExpression,
+        strict: bool,
     },
     /// Commits with conflicts
     HasConflict,
@@ -892,7 +893,8 @@ static BUILTIN_FUNCTION_MAP: Lazy<HashMap<&'static str, RevsetFunction>> = Lazy:
         Ok(RevsetExpression::filter(RevsetFilterPredicate::File(expr)))
     });
     map.insert("diff_contains", |diagnostics, function, context| {
-        let ([text_arg], [files_opt_arg]) = function.expect_arguments()?;
+        let ([text_arg], [files_opt_arg, strict_opt_arg]) =
+            function.expect_named_arguments(&["", "", "strict"])?;
         let text = expect_string_pattern(diagnostics, text_arg)?;
         let files = if let Some(files_arg) = files_opt_arg {
             let ctx = context.workspace.as_ref().ok_or_else(|| {
@@ -907,9 +909,34 @@ static BUILTIN_FUNCTION_MAP: Lazy<HashMap<&'static str, RevsetFunction>> = Lazy:
             // https://github.com/jj-vcs/jj/issues/2933#issuecomment-1925870731
             FilesetExpression::all()
         };
-        Ok(RevsetExpression::filter(
-            RevsetFilterPredicate::DiffContains { text, files },
-        ))
+        let strict = if let Some(strict_arg) = strict_opt_arg {
+            expect_literal(diagnostics, "boolean", strict_arg)?
+        } else {
+            false
+        };
+        if strict
+            && !matches!(
+                text,
+                StringPattern::Exact(_)
+                    | StringPattern::ExactI(_)
+                    | StringPattern::Substring(_)
+                    | StringPattern::SubstringI(_)
+                    | StringPattern::Regex(_)
+            )
+        {
+            Err(RevsetParseError::expression(
+                "expected exact or substring string pattern when using strict mode",
+                text_arg.span,
+            ))
+        } else {
+            Ok(RevsetExpression::filter(
+                RevsetFilterPredicate::DiffContains {
+                    text,
+                    files,
+                    strict,
+                },
+            ))
+        }
     });
     map.insert("conflicts", |_diagnostics, function, _context| {
         function.expect_no_arguments()?;

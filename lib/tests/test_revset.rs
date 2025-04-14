@@ -3920,6 +3920,76 @@ fn test_evaluate_expression_diff_contains() {
         )),
         vec![commit3.id().clone(), commit1.id().clone()]
     );
+
+    // should match commit where 2 was added
+    assert_eq!(
+        query(&format!(
+            "diff_contains('2', {noeol_modified_modified_clean:?}, strict=true)",
+        )),
+        vec![commit2.id().clone()]
+    );
+
+    // should match the two commits where "1 3" was added and removed
+    assert_eq!(
+        query(&format!(
+            "diff_contains('1 3', {normal_inserted_modified_removed:?}, strict=true)",
+        )),
+        vec![commit4.id().clone(), commit3.id().clone()]
+    );
+
+    // should match the commits where a line with exactly 2 was added/removed
+    assert_eq!(
+        query(&format!(
+            "diff_contains(exact:'2', {noeol_modified_modified_clean:?}, strict=true)",
+        )),
+        vec![commit3.id().clone(), commit2.id().clone()]
+    );
+    assert_eq!(
+        query(&format!(
+            "diff_contains(exact:'2', {normal_inserted_modified_removed:?}, strict=true)",
+        )),
+        vec![commit4.id().clone(), commit2.id().clone()]
+    );
+
+    // should match the commits where an empty line (excluding eol) was
+    // added/removed
+    assert_eq!(
+        query(&format!(
+            "diff_contains(exact:'', {blank_clean_inserted_clean:?}, strict=true)",
+        )),
+        vec![commit1.id().clone()]
+    );
+
+    // should match the commits where any number was added/removed
+    assert_eq!(
+        query(&format!(
+            "diff_contains(regex:'\\d', {empty_clean_inserted_deleted:?}, strict=true)",
+        )),
+        vec![commit4.id().clone(), commit3.id().clone()]
+    );
+    assert_eq!(
+        query(&format!(
+            "diff_contains(regex:'\\d', {blank_clean_inserted_clean:?}, strict=true)",
+        )),
+        vec![commit3.id().clone()]
+    );
+    assert_eq!(
+        query(&format!(
+            "diff_contains(regex:'\\d', {noeol_modified_modified_clean:?}, strict=true)",
+        )),
+        vec![commit3.id().clone(), commit1.id().clone()]
+    );
+    assert_eq!(
+        query(&format!(
+            "diff_contains(regex:'\\d', {normal_inserted_modified_removed:?}, strict=true)",
+        )),
+        vec![
+            commit4.id().clone(),
+            commit3.id().clone(),
+            commit2.id().clone(),
+            commit1.id().clone()
+        ]
+    );
 }
 
 #[test]

@@ -45,6 +45,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 * Added `duplicate_description` template, which allows [customizing the descriptions
   of the commits `jj duplicate` creates](docs/config.md#duplicate-commit-description).
 
+* The `diff_contains` [revset function](docs/revsets.md#functions) now has an optional
+  parameter, `strict`, which enables behavior similar to [`git log -S`](https://git-scm.com/docs/git-log#Documentation/git-log.txt-code-Sltstringgtcode)
+  by comparing the number of pattern matches across diffs.
+
 ### Fixed bugs
 
 * Fixed crash on change-delete conflict resolution.
