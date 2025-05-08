@@ -222,7 +222,8 @@ fn fetch_new_remote(
     with_remote_git_callbacks(ui, |cb| {
         git_fetch.fetch(remote_name, &[StringPattern::everything()], cb, depth)
     })?;
-    let default_branch = git_fetch.get_default_branch(remote_name)?;
+    let default_branch =
+        with_remote_git_callbacks(ui, |cb| git_fetch.get_default_branch(remote_name, cb))?;
     let import_stats = git_fetch.import_refs()?;
     if let Some(name) = &default_branch {
         let remote_symbol = name.to_remote_symbol(remote_name);
