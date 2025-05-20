@@ -246,8 +246,9 @@ async fn fix_one_file(
 /// this is not verified.
 ///
 /// Returns the new file content, whose value will be the same as `old_content`
-/// unless the command introduced changes. Returns `None` if there were any
-/// failures when starting, stopping, or communicating with the subprocess.
+/// unless the command introduced changes. Returns `Err(None)` if there were any
+/// failures when starting, stopping, or communicating with the subprocess, and
+/// `Err(Some(ToolExecError))` if the tool exited with a nonzero status.
 fn run_tool(
     workspace_root: &Path,
     tool_command: &CommandNameAndArgs,
